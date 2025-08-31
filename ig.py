@@ -21,8 +21,31 @@ with st.expander("Read this first", expanded=False):
         """
     )
 
+# ✅ Guide section for cookies
+with st.expander("📑 How to get cookies.txt (for private/login-required posts)", expanded=False):
+    st.markdown(
+        """
+        To download **private posts** or if Instagram blocks downloads, you need to provide your `cookies.txt`.
+
+        ### Step-by-step:
+        1. Open Instagram in your browser and **log in** to your account.
+        2. Install this extension:
+           - [Get cookies.txt (Chrome)](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?utm_source=chatgpt.com)
+           - [Get cookies.txt (Firefox)](https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/)
+        3. Once logged in, click the extension icon → click **Export**.
+        4. Save the file as `cookies.txt` on your computer.
+        5. Upload it below in the uploader box.
+        6. Now the downloader will work for private posts / login required content.
+
+        ⚠️ Note: Cookies expire after some time. If download stops working, repeat the steps to get a fresh cookies.txt.
+        """
+    )
+
 url = st.text_input("Instagram URL", placeholder="https://www.instagram.com/reel/… or https://www.instagram.com/p/…")
 confirm = st.checkbox("I confirm I have permission to download this content.")
+
+# Upload cookies option
+cookies_file = st.file_uploader("Upload cookies.txt (optional, needed for private posts/login required)", type=["txt"])
 
 # Optional settings
 col1, col2 = st.columns(2)
@@ -31,7 +54,7 @@ with col1:
         "Preferred format (videos)",
         options=["mp4", "best"],
         index=0,
-        help="mp4 merges streams when possible; 'best' lets yt-dlp pick best available."
+        help="mp4 tries to pick mp4 video, best lets yt-dlp decide automatically."
     )
 with col2:
     keep_audio_only = st.checkbox("Audio only (if available)")
@@ -66,20 +89,34 @@ if st.button("Download", type="primary"):
         "quiet": True,
         "noprogress": True,
         "restrictfilenames": True,
-        "merge_output_format": "mp4" if format_note == "mp4" else None,
     }
 
     if keep_audio_only:
-        # Prefer best audio format if user wants audio-only
         ydl_opts.update({
-            "format": "bestaudio/best",
+            "format": "bestaudio[ext=mp3]/bestaudio",
             "postprocessors": [
                 {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}
             ],
         })
+    else:
+        if format_note == "mp4":
+            ydl_opts.update({
+                "format": "best[ext=mp4]/bestimage/best"
+            })
+        else:
+            ydl_opts.update({
+                "format": "best/bestimage"
+            })
 
     with tempfile.TemporaryDirectory() as tmpdir:
         ydl_opts["outtmpl"] = os.path.join(tmpdir, "%(title).200B.%(id)s.%(ext)s")
+
+        # Save cookies.txt if uploaded
+        if cookies_file:
+            cookies_path = os.path.join(tmpdir, "cookies.txt")
+            with open(cookies_path, "wb") as f:
+                f.write(cookies_file.getbuffer())
+            ydl_opts["cookiefile"] = cookies_path
 
         status = st.status("Fetching media…", expanded=True)
         try:
@@ -133,5 +170,6 @@ if st.button("Download", type="primary"):
             status.update(label="Failed.", state="error")
             st.exception(e)
             st.info(
-                "If this is a private link or requires login, the download may fail. Try a public post/reel."
+                "If this is a private link, requires login, or Instagram blocked your request, "
+                "try uploading your `cookies.txt` file (see instructions in the expander above)."
             )
