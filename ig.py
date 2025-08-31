@@ -78,6 +78,7 @@ if cookies_file:
             "quiet": True,
             "noprogress": True,
             "restrictfilenames": True,
+            "format": "best/bestimage"
         }
 
         if keep_audio_only:
@@ -360,4 +361,5 @@ else:
 #                 "If this is a private link, requires login, or Instagram blocked your request, "
 #                 "try uploading your `cookies.txt` file (see instructions in the expander above)."
 #             )
+
 
