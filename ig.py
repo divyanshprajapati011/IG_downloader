@@ -12,14 +12,6 @@ st.set_page_config(page_title="Insta Downloader", page_icon="📥", layout="cent
 st.title("📥 Instagram Downloader")
 st.caption("Paste an Instagram post/reel URL and download the media you have permission to save.")
 
-with st.expander("Read this first", expanded=False):
-    st.markdown(
-        """
-        *Disclaimer*: This tool is for personal/educational use. Only download content if you
-        are the owner, have explicit permission, or the license allows it. Instagram's terms of service
-        may restrict downloading. Proceed at your own responsibility.
-        """
-    )
 
 # ✅ Guide section for cookies
 with st.expander("📑 How to get cookies.txt (for private/login-required posts)", expanded=False):
@@ -575,6 +567,7 @@ if st.button("Download", type="primary"):
 #                 "If this is a private link, requires login, or Instagram blocked your request, "
 #                 "try uploading your `cookies.txt` file (see instructions in the expander above)."
 #             )
+
 
 
 
