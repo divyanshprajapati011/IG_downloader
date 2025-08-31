@@ -65,20 +65,9 @@ def _mime_for(path):
     return mt or "application/octet-stream"
 
 
-if st.button("Download", type="primary"):
-    if not cookies_file:
-        st.error("Please upload cookies.txt first.")
-        st.stop()
-    if not url.strip():
-        st.error("Please paste an Instagram URL.")
-        st.stop()
-    if "instagram.com" not in url:
-        st.error("This doesn't look like an Instagram link.")
-        st.stop()
-    if not confirm:
-        st.warning("You must confirm permission to proceed.")
-        st.stop()
-
+# ✅ Yeh function banaya jo reusable hai
+def download_instagram_media(url: str, cookies_file, format_note: str, keep_audio_only: bool):
+    """Download IG media (video/image/album) and return (files, info)."""
     ydl_opts = {
         "quiet": True,
         "noprogress": True,
@@ -102,85 +91,95 @@ if st.button("Download", type="primary"):
         ydl_opts["outtmpl"] = os.path.join(tmpdir, "%(title).200B.%(id)s.%(ext)s")
 
         # Save cookies.txt if uploaded
-        cookies_path = os.path.join(tmpdir, "cookies.txt")
-        with open(cookies_path, "wb") as f:
-            f.write(cookies_file.getbuffer())
-        ydl_opts["cookiefile"] = cookies_path
+        if cookies_file:
+            cookies_path = os.path.join(tmpdir, "cookies.txt")
+            with open(cookies_path, "wb") as f:
+                f.write(cookies_file.getbuffer())
+            ydl_opts["cookiefile"] = cookies_path
 
-        status = st.status("Fetching media…", expanded=True)
-        try:
-            with YoutubeDL(ydl_opts) as ydl:
-                try:
-                    info = ydl.extract_info(url, download=True)
-                except DownloadError as e:
-                    # 👇 Fallback if no video found, try image
-                    if "No video formats found" in str(e) or "no video" in str(e).lower():
-                        ydl_opts["format"] = "bestimage"
-                        with YoutubeDL(ydl_opts) as ydl2:
-                            info = ydl2.extract_info(url, download=True)
-                    else:
-                        raise
+        with YoutubeDL(ydl_opts) as ydl:
+            try:
+                info = ydl.extract_info(url, download=True)
+            except DownloadError as e:
+                # 👇 Fallback: try image if video fails
+                if "No video formats found" in str(e) or "no video" in str(e).lower():
+                    ydl_opts["format"] = "bestimage"
+                    with YoutubeDL(ydl_opts) as ydl2:
+                        info = ydl2.extract_info(url, download=True)
+                else:
+                    raise
 
-            status.update(label="Download complete.", state="complete")
+        files = glob.glob(os.path.join(tmpdir, "*"))
+        return files, info
 
-            files = glob.glob(os.path.join(tmpdir, "*"))
-            if not files:
-                st.error("No files were produced. The link may be unsupported or private.")
-                st.stop()
 
-            if len(files) == 1:
-                fp = files[0]
-                fname = os.path.basename(fp)
-                with open(fp, "rb") as f:
-                    data = f.read()
-                st.success("Ready! Click below to save.")
-                st.download_button(
-                    label=f"⬇️ Download {fname}",
-                    data=data,
-                    file_name=fname,
-                    mime=_mime_for(fp),
-                )
-            else:
-                buf = _make_zip(files)
-                st.success("Multiple files found (album/carousel). Download the ZIP.")
-                st.download_button(
-                    label="⬇️ Download ZIP",
-                    data=buf,
-                    file_name="instagram_media.zip",
-                    mime="application/zip",
-                )
+# ✅ UI button section
+if st.button("Download", type="primary"):
+    if not cookies_file:
+        st.error("Please upload cookies.txt first.")
+        st.stop()
+    if not url.strip():
+        st.error("Please paste an Instagram URL.")
+        st.stop()
+    if "instagram.com" not in url:
+        st.error("This doesn't look like an Instagram link.")
+        st.stop()
+    if not confirm:
+        st.warning("You must confirm permission to proceed.")
+        st.stop()
 
-            # Show a tiny info panel
-            with st.expander("Details"):
-                if isinstance(info, dict):
-                    title = info.get("title") or "—"
-                    uploader = info.get("uploader") or info.get("uploader_id") or "—"
-                    duration = info.get("duration")
-                    webpage_url = info.get("webpage_url") or url
-                    st.write({
-                        "title": title,
-                        "uploader": uploader,
-                        "duration_seconds": duration,
-                        "source": webpage_url,
-                    })
+    status = st.status("Fetching media…", expanded=True)
+    try:
+        files, info = download_instagram_media(url, cookies_file, format_note, keep_audio_only)
 
-        except Exception as e:
-            status.update(label="Failed.", state="error")
-            st.exception(e)
-            st.info(
-                "If this is a private link, requires login, or Instagram blocked your request, "
-                "try uploading your `cookies.txt` file (see instructions in the expander above)."
+        status.update(label="Download complete.", state="complete")
+
+        if not files:
+            st.error("No files were produced. The link may be unsupported or private.")
+            st.stop()
+
+        if len(files) == 1:
+            fp = files[0]
+            fname = os.path.basename(fp)
+            with open(fp, "rb") as f:
+                data = f.read()
+            st.success("Ready! Click below to save.")
+            st.download_button(
+                label=f"⬇️ Download {fname}",
+                data=data,
+                file_name=fname,
+                mime=_mime_for(fp),
+            )
+        else:
+            buf = _make_zip(files)
+            st.success("Multiple files found (album/carousel). Download the ZIP.")
+            st.download_button(
+                label="⬇️ Download ZIP",
+                data=buf,
+                file_name="instagram_media.zip",
+                mime="application/zip",
             )
 
+        with st.expander("Details"):
+            if isinstance(info, dict):
+                title = info.get("title") or "—"
+                uploader = info.get("uploader") or info.get("uploader_id") or "—"
+                duration = info.get("duration")
+                webpage_url = info.get("webpage_url") or url
+                st.write({
+                    "title": title,
+                    "uploader": uploader,
+                    "duration_seconds": duration,
+                    "source": webpage_url,
+                })
 
-
-
-
-
-
-
-
-
+    except Exception as e:
+        status.update(label="Failed.", state="error")
+        st.exception(e)
+        st.info(
+            "If this is a private link, requires login, or Instagram blocked your request, "
+            "try uploading your `cookies.txt` file (see instructions in the expander above)."
+        )
 
 
 
@@ -552,6 +551,7 @@ if st.button("Download", type="primary"):
 #                 "If this is a private link, requires login, or Instagram blocked your request, "
 #                 "try uploading your `cookies.txt` file (see instructions in the expander above)."
 #             )
+
 
 
 
