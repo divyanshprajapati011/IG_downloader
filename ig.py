@@ -4,6 +4,7 @@ import glob
 import mimetypes
 import tempfile
 import zipfile
+import requests
 
 import streamlit as st
 from yt_dlp import YoutubeDL, DownloadError
@@ -12,33 +13,28 @@ st.set_page_config(page_title="Insta Downloader", page_icon="📥", layout="cent
 st.title("📥 Instagram Downloader")
 st.caption("Paste an Instagram post/reel URL and download the media you have permission to save.")
 
-
 # ✅ Guide section for cookies
 with st.expander("📑 How to get cookies.txt (for private/login-required posts)", expanded=False):
     st.markdown(
         """
         To download **private posts** or if Instagram blocks downloads, you need to provide your `cookies.txt`.
 
-        ### Step-by-step:
-        1. Open Instagram in your browser and **log in** to your account.
-        2. Install this extension:
-           - [Get cookies.txt (Chrome)](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?utm_source=chatgpt.com)
-           - [Get cookies.txt (Firefox)](https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/)
-        3. Once logged in, click the extension icon → click **Export**.
-        4. Save the file as `cookies.txt` on your computer.
-        5. Upload it below in the uploader box.
-        6. Now the downloader will work for private posts / login required content.
-
-        ⚠️ Note: Cookies expire after some time. If download stops working, repeat the steps to get a fresh cookies.txt.
+        **Steps:**
+        1. Open Instagram in your browser and **log in**.
+        2. Install extension:  
+           - [Get cookies.txt (Chrome)](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)  
+           - [Get cookies.txt (Firefox)](https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/)  
+        3. Click extension → **Export** → save as `cookies.txt`.
+        4. Upload it below.
+        5. If downloads stop later, refresh cookies again.
         """
     )
 
-# 👉 First upload cookies, then paste link
 cookies_file = st.file_uploader("Upload cookies.txt (required for private posts/login)", type=["txt"])
 url = st.text_input("Instagram URL", placeholder="https://www.instagram.com/reel/… or https://www.instagram.com/p/…")
 confirm = st.checkbox("I confirm I have permission to download this content.")
 
-# Optional settings
+# Options
 col1, col2 = st.columns(2)
 with col1:
     format_note = st.selectbox(
@@ -87,25 +83,20 @@ if st.button("Download", type="primary"):
 
     if keep_audio_only:
         ydl_opts.update({
-            "format": "bestaudio[ext=mp3]/bestaudio",
+            "format": "bestaudio/best",
             "postprocessors": [
                 {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}
             ],
         })
     else:
         if format_note == "mp4":
-            ydl_opts.update({
-                "format": "best[ext=mp4]/best/bestimage"
-            })
+            ydl_opts.update({"format": "best[ext=mp4]/best/bestimage"})
         else:
-            ydl_opts.update({
-                "format": "best/bestimage"
-            })
+            ydl_opts.update({"format": "best/bestimage"})
 
     with tempfile.TemporaryDirectory() as tmpdir:
         ydl_opts["outtmpl"] = os.path.join(tmpdir, "%(title).200B.%(id)s.%(ext)s")
 
-        # Save cookies.txt if uploaded
         cookies_path = os.path.join(tmpdir, "cookies.txt")
         with open(cookies_path, "wb") as f:
             f.write(cookies_file.getbuffer())
@@ -117,7 +108,6 @@ if st.button("Download", type="primary"):
                 try:
                     info = ydl.extract_info(url, download=True)
                 except DownloadError as e:
-                    # 👇 Fallback if no video found, try image
                     if "No video formats found" in str(e):
                         ydl_opts["format"] = "bestimage"
                         with YoutubeDL(ydl_opts) as ydl2:
@@ -137,7 +127,13 @@ if st.button("Download", type="primary"):
                 fname = os.path.basename(fp)
                 with open(fp, "rb") as f:
                     data = f.read()
-                st.success("Ready! Click below to save.")
+                st.success("Ready! Preview below 👇")
+                # Preview
+                if fname.endswith((".mp4", ".mov")):
+                    st.video(data)
+                elif fname.endswith((".jpg", ".png", ".jpeg", ".webp")):
+                    st.image(data)
+
                 st.download_button(
                     label=f"⬇️ Download {fname}",
                     data=data,
@@ -146,7 +142,7 @@ if st.button("Download", type="primary"):
                 )
             else:
                 buf = _make_zip(files)
-                st.success("Multiple files found (album/carousel). Download the ZIP.")
+                st.success("Multiple files found (album/carousel). Download the ZIP below 👇")
                 st.download_button(
                     label="⬇️ Download ZIP",
                     data=buf,
@@ -154,7 +150,7 @@ if st.button("Download", type="primary"):
                     mime="application/zip",
                 )
 
-            # Show a tiny info panel
+            # Info panel
             with st.expander("Details"):
                 if isinstance(info, dict):
                     title = info.get("title") or "—"
@@ -173,13 +169,8 @@ if st.button("Download", type="primary"):
             st.exception(e)
             st.info(
                 "If this is a private link, requires login, or Instagram blocked your request, "
-                "try uploading your `cookies.txt` file (see instructions in the expander above)."
+                "try uploading your `cookies.txt` file again."
             )
-
-
-
-
-
 
 
 
@@ -567,6 +558,7 @@ if st.button("Download", type="primary"):
 #                 "If this is a private link, requires login, or Instagram blocked your request, "
 #                 "try uploading your `cookies.txt` file (see instructions in the expander above)."
 #             )
+
 
 
 
