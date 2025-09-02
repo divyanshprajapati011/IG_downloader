@@ -1,7 +1,6 @@
 import streamlit as st
 import instaloader
-import requests, io, zipfile
-from streamlit.components.v1 import html
+import requests, io, zipfile, time
 
 st.set_page_config(page_title="📥 Instagram Downloader", layout="centered")
 st.title("📥 Instagram Downloader ")
@@ -17,7 +16,8 @@ L = instaloader.Instaloader(
 
 def get_media_links(url):
     """Extract media URLs with Instaloader"""
-    post = instaloader.Post.from_shortcode(L.context, url.split("/")[-2])
+    shortcode = url.split("/")[-2]
+    post = instaloader.Post.from_shortcode(L.context, shortcode)
     media_urls = []
     if post.typename == "GraphImage":
         media_urls.append(post.url)
@@ -46,41 +46,43 @@ def prepare_download(media_urls):
         zip_buffer.seek(0)
         return zip_buffer, "instagram_media.zip"
 
-# ================= Preview Logic ==================
+
+# ================= Preview + Download ==================
 if url:
     if st.button("🔍 Preview Media"):
-        with st.spinner("⏳ Fetching media, please wait..."):
-            try:
+        try:
+            st.subheader("🔍 Preview")
+            with st.spinner("⏳ Fetching media, please wait..."):
                 media_urls = get_media_links(url)
 
-                if media_urls:
-                    st.success("✅ Preview ready!")
+            if media_urls:
+                st.success("✅ Preview ready!")
 
-                    st.subheader("🔍 Preview")
-                    for u in media_urls:
+                # ✅ Grid layout (3 columns per row)
+                cols = st.columns(3)
+                for i, u in enumerate(media_urls):
+                    r = requests.get(u)
+                    file_bytes = io.BytesIO(r.content)
+
+                    with cols[i % 3]:  # round-robin placement
                         if ".mp4" in u:
-                            video_html = f"""
-                            <video width="600" height="500" controls>
-                                <source src="{u}" type="video/mp4">
-                            </video>
-                            """
-                            html(video_html, height=500)
+                            st.video(file_bytes)
                         else:
-                            st.image(u, width=300)
+                            st.image(file_bytes, use_container_width=True)
 
-                    # Download button (only after preview success)
-                    file_data, filename = prepare_download(media_urls)
-                    st.download_button(
-                        "⬇️ Download",
-                        data=file_data,
-                        file_name=filename,
-                        mime="application/zip" if filename.endswith(".zip") else None,
-                    )
-                else:
-                    st.warning("⚠️ No media found!")
+                with st.spinner("Preparing download..."):
+                    time.sleep(1)
+                    data, fname = prepare_download(media_urls)
 
-            except Exception as e:
-                st.error(f"❌ Error: {e}")
+                st.download_button(
+                    "⬇️ Download All",
+                    data=data,
+                    file_name=fname,
+                    mime="application/zip" if fname.endswith(".zip") else None,
+                )
 
+            else:
+                st.warning("⚠️ No media found!")
 
-
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
