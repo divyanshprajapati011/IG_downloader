@@ -1,82 +1,89 @@
+
+
+
+
+
 import streamlit as st
-import requests
-import os
-from yt_dlp import YoutubeDL
+import instaloader
+import requests, io, zipfile
+from streamlit.components.v1 import html
 
+st.set_page_config(page_title="📥 Instagram Downloader", layout="centered")
+st.title("📥 Instagram Downloader ")
 
+url = st.text_input("🔗 Enter Instagram Post/Reel URL:")
 
-st.set_page_config(page_title="📥 Instagram Downloader", page_icon="📥", layout="centered")
-st.title("📥 Instagram Downloader")
+L = instaloader.Instaloader(
+    download_videos=False,
+    download_comments=False,
+    save_metadata=False,
+    compress_json=False
+)
 
+def get_media_links(url):
+    """Extract media URLs with Instaloader"""
+    post = instaloader.Post.from_shortcode(L.context, url.split("/")[-2])
+    media_urls = []
+    if post.typename == "GraphImage":
+        media_urls.append(post.url)
+    elif post.typename == "GraphVideo":
+        media_urls.append(post.video_url)
+    elif post.typename == "GraphSidecar":  # Carousel
+        for node in post.get_sidecar_nodes():
+            media_urls.append(node.video_url if node.is_video else node.display_url)
+    return media_urls
 
-
-
-# ✅ Guide section for cookies
-with st.expander("📑 How to get cookies.txt (for private/login-required posts)", expanded=False):
-    st.markdown(
-        """
-        To download *private posts* or if Instagram blocks downloads, you need to provide your cookies.txt.
-
-        ### Step-by-step:
-        1. Open Instagram in your browser and *log in* to your account.
-        2. Install this extension:
-           - [Get cookies.txt (Chrome)](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
-           - [Get cookies.txt (Firefox)](https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/)
-        3. Once logged in, click the extension icon → click *Export*.
-        4. Save the file as cookies.txt on your computer.
-        5. Upload it below in the uploader box.
-        6. Now the downloader will work for private posts / login required content.
-
-        ⚠️ Note: Cookies expire after some time. If download stops working, repeat the steps to get a fresh cookies.txt.
-        """
-    )
-
-url = st.text_input("Paste Instagram Reel/Post URL:")
-
-cookies_file = st.file_uploader("Upload cookies.txt (only if needed for private posts)", type=["txt"])
-
-if st.button("Download"):
-    if not url:
-        st.error("❌ Please paste a valid Instagram link")
+def prepare_download(media_urls):
+    """Return file or zip"""
+    if len(media_urls) == 1:
+        u = media_urls[0]
+        r = requests.get(u)
+        file_data = io.BytesIO(r.content)
+        filename = "instagram_video.mp4" if ".mp4" in u else "instagram_image.jpg"
+        return file_data, filename
     else:
-        try:
-            # Save cookies file temporarily if uploaded
-            cookie_path = None
-            if cookies_file is not None:
-                cookie_path = os.path.join("cookies.txt")
-                with open(cookie_path, "wb") as f:
-                    f.write(cookies_file.read())
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zf:
+            for idx, u in enumerate(media_urls, 1):
+                r = requests.get(u)
+                ext = ".mp4" if ".mp4" in u else ".jpg"
+                zf.writestr(f"media_{idx}{ext}", r.content)
+        zip_buffer.seek(0)
+        return zip_buffer, "instagram_media.zip"
 
-            # yt-dlp options
-            ydl_opts = {
-                "outtmpl": "%(title)s.%(ext)s",
-                "format": "best",
-                "quiet": True,
-            }
-            if cookie_path:
-                ydl_opts["cookiefile"] = cookie_path
+# ================= Preview Logic ==================
+if url:
+    if st.button("🔍 Preview Media"):
+        with st.spinner("⏳ Fetching media, please wait..."):
+            try:
+                media_urls = get_media_links(url)
 
-            with YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)  # just extract
-                download_url = info.get("url")
+                if media_urls:
+                    st.success("✅ Preview ready!")
 
-                if not download_url:
-                    st.error("⚠️ No downloadable video found (maybe this is an image post).")
-                else:
-                    filename = info.get("title", "instagram_video") + ".mp4"
-                    video_bytes = requests.get(download_url).content
+                    st.subheader("🔍 Preview")
+                    for u in media_urls:
+                        if ".mp4" in u:
+                            video_html = f"""
+                            <video width="600" height="500" controls>
+                                <source src="{u}" type="video/mp4">
+                            </video>
+                            """
+                            html(video_html, height=500)
+                        else:
+                            st.image(u, width=300)
 
-                    st.video(download_url)
+                    # Download button (only after preview success)
+                    file_data, filename = prepare_download(media_urls)
                     st.download_button(
-                        label="⬇️ Download Video",
-                        data=video_bytes,
+                        "⬇️ Download",
+                        data=file_data,
                         file_name=filename,
-                        mime="video/mp4",
+                        mime="application/zip" if filename.endswith(".zip") else None,
                     )
+                else:
+                    st.warning("⚠️ No media found!")
 
-            # cleanup
-            if cookie_path and os.path.exists(cookie_path):
-                os.remove(cookie_path)
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
 
-        except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
