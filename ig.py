@@ -1,3 +1,5 @@
+
+
 import streamlit as st
 import instaloader
 import requests, io, zipfile, time
@@ -32,19 +34,26 @@ def prepare_download(media_urls):
     """Return file or zip"""
     if len(media_urls) == 1:
         u = media_urls[0]
-        r = requests.get(u)
-        file_data = io.BytesIO(r.content)
-        filename = "instagram_video.mp4" if ".mp4" in u else "instagram_image.jpg"
-        return file_data, filename
+        if u.endswith(".mp4"):   # ✅ direct video link
+            return u, "instagram_video.mp4", "url"
+        else:  # ✅ non-video case use BytesIO
+            r = requests.get(u)
+            file_data = io.BytesIO(r.content)
+            filename = "instagram_image.jpg"
+            return file_data, filename, "bytes"
     else:
+        # ✅ for multiple media → zip banani padegi
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w") as zf:
             for idx, u in enumerate(media_urls, 1):
-                r = requests.get(u)
-                ext = ".mp4" if ".mp4" in u else ".jpg"
-                zf.writestr(f"media_{idx}{ext}", r.content)
+                if u.endswith(".mp4"):
+                    r = requests.get(u, stream=True)
+                    zf.writestr(f"media_{idx}.mp4", r.content)
+                else:
+                    r = requests.get(u)
+                    zf.writestr(f"media_{idx}.jpg", r.content)
         zip_buffer.seek(0)
-        return zip_buffer, "instagram_media.zip"
+        return zip_buffer, "instagram_media.zip", "bytes"
 
 
 # ================= Preview + Download ==================
@@ -61,28 +70,43 @@ if url:
                 # ✅ Grid layout (3 columns per row)
                 cols = st.columns(3)
                 for i, u in enumerate(media_urls):
-                    r = requests.get(u)
-                    file_bytes = io.BytesIO(r.content)
-
-                    with cols[i % 3]:  # round-robin placement
+                    with cols[i % 3]:
                         if ".mp4" in u:
-                            st.video(file_bytes)
+                            # 🎬 Custom video formatting (fixed size)
+                            st.markdown(
+                                f"""
+                                <video controls style="width:100%; max-width:250px; border-radius:12px;">
+                                    <source src="{u}" type="video/mp4">
+                                </video>
+                                """,
+                                unsafe_allow_html=True
+                            )
                         else:
+                            r = requests.get(u)
+                            file_bytes = io.BytesIO(r.content)
                             st.image(file_bytes, use_container_width=True)
 
                 with st.spinner("Preparing download..."):
                     time.sleep(1)
-                    data, fname = prepare_download(media_urls)
+                    data, fname, dtype = prepare_download(media_urls)
 
-                st.download_button(
-                    "⬇️ Download All",
-                    data=data,
-                    file_name=fname,
-                    mime="application/zip" if fname.endswith(".zip") else None,
-                )
+                if dtype == "url":
+                    st.markdown(
+                        f"[⬇️ Download Video]({data})",
+                        unsafe_allow_html=True
+                    )
+                else:
+                    st.download_button(
+                        "⬇️ Download",
+                        data=data,
+                        file_name=fname,
+                        mime="application/zip" if fname.endswith(".zip") else None,
+                    )
 
             else:
                 st.warning("⚠️ No media found!")
 
         except Exception as e:
             st.error(f"❌ Error: {e}")
+
+
