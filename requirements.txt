@@ -1,3 +1,4 @@
-streamlit
-yt-dlp
-requests
+streamlit==1.38.0
+instaloader==4.13
+requests==2.32.3
+
