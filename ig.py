@@ -1,35 +1,14 @@
+
+
+
+
 import streamlit as st
 import requests
 import os
 from yt_dlp import YoutubeDL
 
-
-
 st.set_page_config(page_title="📥 Instagram Downloader", page_icon="📥", layout="centered")
 st.title("📥 Instagram Downloader")
-
-
-
-
-# ✅ Guide section for cookies
-with st.expander("📑 How to get cookies.txt (for private/login-required posts)", expanded=False):
-    st.markdown(
-        """
-        To download **private posts** or if Instagram blocks downloads, you need to provide your `cookies.txt`.
-
-        ### Step-by-step:
-        1. Open Instagram in your browser and **log in** to your account.
-        2. Install this extension:
-           - [Get cookies.txt (Chrome)](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
-           - [Get cookies.txt (Firefox)](https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/)
-        3. Once logged in, click the extension icon → click **Export**.
-        4. Save the file as `cookies.txt` on your computer.
-        5. Upload it below in the uploader box.
-        6. Now the downloader will work for private posts / login required content.
-
-        ⚠️ Note: Cookies expire after some time. If download stops working, repeat the steps to get a fresh cookies.txt.
-        """
-    )
 
 url = st.text_input("Paste Instagram Reel/Post URL:")
 
@@ -52,28 +31,62 @@ if st.button("Download"):
                 "outtmpl": "%(title)s.%(ext)s",
                 "format": "best",
                 "quiet": True,
+                "nocheckcertificate": True,
+                "ignoreerrors": True,
+                "geo_bypass": True,
             }
             if cookie_path:
                 ydl_opts["cookiefile"] = cookie_path
 
+
             with YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)  # just extract
-                download_url = info.get("url")
+                info = ydl.extract_info(url, download=False)
 
-                if not download_url:
-                    st.error("⚠️ No downloadable video found (maybe this is an image post).")
+                if not info:
+                    st.error("⚠️ Could not fetch media info. Try updating yt-dlp (`pip install -U yt-dlp`).")
                 else:
-                    filename = info.get("title", "instagram_video") + ".mp4"
-                    video_bytes = requests.get(download_url).content
+                    title = info.get("title", "instagram_media")
 
-                    st.video(download_url)
-                    st.download_button(
-                        label="⬇️ Download Video",
-                        data=video_bytes,
-                        file_name=filename,
-                        mime="video/mp4",
-                    )
+                    # Case 1: Carousel / Album
+                    if "entries" in info:
+                        for i, entry in enumerate(info["entries"], start=1):
+                            if entry is None:
+                                continue  # skip broken entries
 
+                            if "formats" in entry:  # video
+                                video_url = entry["formats"][-1]["url"]
+                                filename = f"{title}_{i}.mp4"
+                                video_bytes = requests.get(video_url).content
+                                st.video(video_url)
+                                st.download_button(f"⬇️ Download Video {i}", video_bytes, filename, "video/mp4")
+
+                            elif "url" in entry:  # image
+                                image_url = entry["url"]
+                                ext = entry.get("ext", "jpg")
+                                filename = f"{title}_{i}.{ext}"
+                                image_bytes = requests.get(image_url).content
+                                st.image(image_url, caption=f"{title} ({i})")
+                                st.download_button(f"⬇️ Download Image {i}", image_bytes, filename, f"image/{ext}")
+
+                    # Case 2: Single video
+                    elif "formats" in info:
+                        video_url = info["formats"][-1]["url"]
+                        filename = f"{title}.mp4"
+                        video_bytes = requests.get(video_url).content
+                        st.video(video_url)
+                        st.download_button("⬇️ Download Video", video_bytes, filename, "video/mp4")
+
+                    # Case 3: Single image
+                    elif "url" in info:
+                        image_url = info["url"]
+                        ext = info.get("ext", "jpg")
+                        filename = f"{title}.{ext}"
+                        image_bytes = requests.get(image_url).content
+                        st.image(image_url, caption=title)
+                        st.download_button("⬇️ Download Image", image_bytes, filename, f"image/{ext}")
+
+                    else:
+                        st.error("⚠️ No downloadable media found. This post may require cookies.")
             # cleanup
             if cookie_path and os.path.exists(cookie_path):
                 os.remove(cookie_path)
